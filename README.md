@@ -8,6 +8,16 @@ Windows 下的轻量延时自动输入工具。界面基于 Python 标准库 `tk
 uv run python -m auto_input
 ```
 
+## 打包
+
+双击或在 PowerShell 中运行：
+
+```powershell
+.\build-onefile.bat
+```
+
+生成的单文件程序位于 `dist\AutoInput.exe`。
+
 ## 功能
 
 - 粘贴一段文字后，按设定的开始延时自动输入到当前焦点窗口。
