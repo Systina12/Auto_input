@@ -1,0 +1,27 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="DuplicatedCode" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <Languages>
+        <language minSize="89" name="Python" />
+      </Languages>
+    </inspection_tool>
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="streamlit" />
+          <option value="opencv-python" />
+          <option value="fer" />
+          <option value="numpy" />
+          <option value="soundfile" />
+          <option value="librosa" />
+          <option value="transformers" />
+          <option value="requests" />
+          <option value="pandas" />
+          <option value="plotly" />
+          <option value="moviepy" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

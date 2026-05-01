@@ -1,0 +1,9 @@
+[project]
+name = "auto-input"
+version = "0.1.0"
+description = "A lightweight Windows delayed text input tool."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
