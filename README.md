@@ -1,55 +1,55 @@
 # Auto Input
 
-[English](README_en.md)
+[中文](README_zh.md)
 
-Auto Input 是一个面向 Windows 的轻量自动输入工具。你可以粘贴一段文字，设置开始延时和字间延迟，然后让程序把文本输入到当前焦点窗口。
+Auto Input is a lightweight Windows text input automation tool. Paste text, configure a start delay and per-character delay, then let the app type the text into the currently focused window.
 
-界面使用 Python 标准库 `tkinter`，输入使用 Windows `SendInput`，运行时不需要第三方依赖。
+The GUI uses Python's standard `tkinter` library. Text input is sent through the Windows `SendInput` API, so there are no third-party runtime dependencies.
 
-## 运行
+## Run
 
 ```powershell
 uv run python -m auto_input
 ```
 
-## 打包单文件
+## Build A Single-File EXE
 
-项目提供了 PyInstaller 打包脚本：
+Use the included PyInstaller build script:
 
 ```powershell
 .\build-onefile.bat
 ```
 
-打包完成后，程序位于：
+The output will be:
 
 ```text
 dist\AutoInput.exe
 ```
 
-脚本会通过 uv 临时调用 PyInstaller，不会把 PyInstaller 加入运行依赖。
+The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added as a runtime dependency.
 
-## 功能
+## Features
 
-- 延时开始输入：开始后先倒计时，方便切换到目标窗口。
-- 字间延迟：支持固定延迟，也支持随机延迟。
-- 随机字间延迟：可设置最小值和最大值。
-- 换行方式：支持 `Enter`、`Shift+Enter`、`Ctrl+Enter`、Unicode 换行。
-- 急停：支持窗口内“急停”按钮和全局急停热键。
-- 可配置急停热键：默认是反引号/波浪号键，也可设置为 `Esc`、`F12`、`Ctrl+Shift+Q` 等。
-- 可取消任务：等待倒计时和正在输入时都可以取消。
-- 界面语言：右上角可在中文和 English 之间切换。
-- 窗口可缩放：文本区域会随窗口大小调整。
+- Delayed start: gives you time to switch to the target window.
+- Per-character delay: supports fixed and randomized delays.
+- Randomized character delay: configurable minimum and maximum values.
+- Newline modes: `Enter`, `Shift+Enter`, `Ctrl+Enter`, and Unicode newline.
+- Emergency stop: available through the in-window button and a global hotkey.
+- Configurable emergency hotkey: defaults to the backtick/tilde key, and can be changed to values like `Esc`, `F12`, or `Ctrl+Shift+Q`.
+- Cancel support: works while waiting and while typing.
+- UI language: switch between Chinese and English from the top-right selector.
+- Resizable window: the text area adjusts with the window size.
 
-## 使用步骤
+## Usage
 
-1. 在文本框中粘贴要输入的内容。
-2. 设置开始延时、字间延迟和换行方式。
-3. 按“开始”。
-4. 在倒计时结束前切换到目标输入框。
-5. 如需中止，按“取消”、“急停”或配置好的全局急停热键。
+1. Paste the text into the text box.
+2. Configure the start delay, character delay, and newline mode.
+3. Click Start.
+4. Switch to the target input field before the countdown ends.
+5. To stop, click Cancel, click Emergency Stop, or press the configured global emergency hotkey.
 
-## 注意事项
+## Notes
 
-- 如果目标程序以管理员权限运行，本工具也需要以管理员权限运行，才能向目标窗口发送输入。
-- 默认换行方式是 `Enter`。如果目标是聊天软件，建议尝试 `Shift+Enter` 或 `Ctrl+Enter`，避免单独 `Enter` 直接发送消息。
-- 全局急停热键只在任务运行期间注册，任务结束后会自动释放。
+- If the target program runs as administrator, Auto Input must also run as administrator to send input to that window.
+- The default newline mode is `Enter`. For chat apps, try `Shift+Enter` or `Ctrl+Enter` to avoid sending the message accidentally.
+- The global emergency hotkey is registered only while a task is running and is released automatically when the task ends.
