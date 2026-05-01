@@ -19,6 +19,27 @@ PM_NOREMOVE = 0x0000
 
 DEFAULT_HOTKEY = "`"
 
+_ERROR_MESSAGES = {
+    "zh": {
+        "empty": "急停热键不能为空。",
+        "multiple_keys": "急停热键只能包含一个普通按键。",
+        "missing_key": "急停热键缺少普通按键。",
+        "unsupported": "不支持的急停热键：{token}",
+        "windows_only": "全局急停热键只支持 Windows。",
+        "timeout": "急停热键监听启动超时。",
+        "register_failed": "注册急停热键失败，可能已被其他程序占用。",
+    },
+    "en": {
+        "empty": "Emergency hotkey cannot be empty.",
+        "multiple_keys": "Emergency hotkey can contain only one non-modifier key.",
+        "missing_key": "Emergency hotkey is missing a non-modifier key.",
+        "unsupported": "Unsupported emergency hotkey: {token}",
+        "windows_only": "The global emergency hotkey is only supported on Windows.",
+        "timeout": "Emergency hotkey listener timed out while starting.",
+        "register_failed": "Failed to register the emergency hotkey. It may already be used by another program.",
+    },
+}
+
 _MODIFIER_ALIASES = {
     "alt": MOD_ALT,
     "ctrl": MOD_CONTROL,
@@ -144,10 +165,10 @@ else:
     GetCurrentThreadId = None
 
 
-def parse_hotkey(raw: str) -> HotkeySpec:
+def parse_hotkey(raw: str, language: str = "zh") -> HotkeySpec:
     normalized = raw.strip()
     if not normalized:
-        raise HotkeyError("急停热键不能为空。")
+        raise HotkeyError(_message(language, "empty"))
 
     tokens = [token.strip() for token in normalized.replace("＋", "+").split("+") if token.strip()]
     modifiers = 0
@@ -160,17 +181,17 @@ def parse_hotkey(raw: str) -> HotkeySpec:
             modifiers |= modifier
             continue
         if key is not None:
-            raise HotkeyError("急停热键只能包含一个普通按键。")
-        key = _parse_key(token)
+            raise HotkeyError(_message(language, "multiple_keys"))
+        key = _parse_key(token, language)
 
     if key is None:
-        raise HotkeyError("急停热键缺少普通按键。")
+        raise HotkeyError(_message(language, "missing_key"))
 
     display = _format_display(modifiers, key[1])
     return HotkeySpec(modifiers=modifiers, vk=key[0], display=display)
 
 
-def _parse_key(token: str) -> tuple[int, str]:
+def _parse_key(token: str, language: str) -> tuple[int, str]:
     lowered = token.lower()
     alias = _KEY_ALIASES.get(lowered)
     if alias is not None:
@@ -185,7 +206,7 @@ def _parse_key(token: str) -> tuple[int, str]:
         char = token.upper()
         return ord(char), char
 
-    raise HotkeyError(f"不支持的急停热键：{token}")
+    raise HotkeyError(_message(language, "unsupported", token=token))
 
 
 def _format_display(modifiers: int, key_name: str) -> str:
@@ -202,15 +223,15 @@ class HotkeyListener:
         self._lock = threading.Lock()
         self._hotkey_id = 1
 
-    def start(self, spec: HotkeySpec) -> None:
+    def start(self, spec: HotkeySpec, language: str = "zh") -> None:
         if RegisterHotKey is None:
-            raise HotkeyError("全局急停热键只支持 Windows。")
+            raise HotkeyError(_message(language, "windows_only"))
 
         self.stop()
         ready = threading.Event()
         error: list[BaseException] = []
 
-        thread = threading.Thread(target=self._run, args=(spec, ready, error), daemon=True)
+        thread = threading.Thread(target=self._run, args=(spec, ready, error, language), daemon=True)
         with self._lock:
             self._thread = thread
             self._thread_id = None
@@ -218,7 +239,7 @@ class HotkeyListener:
 
         if not ready.wait(2):
             self.stop()
-            raise HotkeyError("急停热键监听启动超时。")
+            raise HotkeyError(_message(language, "timeout"))
         if error:
             with self._lock:
                 self._thread = None
@@ -239,7 +260,7 @@ class HotkeyListener:
             PostThreadMessage(thread_id, WM_QUIT, 0, 0)
             thread.join(timeout=1)
 
-    def _run(self, spec: HotkeySpec, ready: threading.Event, error: list[BaseException]) -> None:
+    def _run(self, spec: HotkeySpec, ready: threading.Event, error: list[BaseException], language: str) -> None:
         assert RegisterHotKey is not None
         assert UnregisterHotKey is not None
         assert GetMessage is not None
@@ -254,7 +275,7 @@ class HotkeyListener:
         PeekMessage(ctypes.byref(message), None, 0, 0, PM_NOREMOVE)
 
         if not RegisterHotKey(None, self._hotkey_id, spec.modifiers | MOD_NOREPEAT, spec.vk):
-            error.append(_last_error("注册急停热键失败，可能已被其他程序占用。"))
+            error.append(_last_error(_message(language, "register_failed")))
             ready.set()
             return
 
@@ -269,6 +290,9 @@ class HotkeyListener:
 
 def _last_error(default_message: str) -> OSError:
     error = ctypes.get_last_error()
-    if hasattr(ctypes, "WinError"):
-        return ctypes.WinError(error)
     return OSError(error, default_message)
+
+
+def _message(language: str, key: str, **kwargs: object) -> str:
+    messages = _ERROR_MESSAGES.get(language, _ERROR_MESSAGES["zh"])
+    return messages[key].format(**kwargs)

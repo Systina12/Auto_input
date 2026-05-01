@@ -30,6 +30,10 @@ class HotkeyParsingTests(unittest.TestCase):
         with self.assertRaises(HotkeyError):
             parse_hotkey(" ")
 
+    def test_english_errors_are_available(self) -> None:
+        with self.assertRaisesRegex(HotkeyError, "cannot be empty"):
+            parse_hotkey(" ", "en")
+
 
 if __name__ == "__main__":
     unittest.main()

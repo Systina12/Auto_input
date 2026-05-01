@@ -37,6 +37,7 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 - Emergency stop: available through the in-window button and a global hotkey.
 - Configurable emergency hotkey: defaults to the backtick/tilde key, and can be changed to values like `Esc`, `F12`, or `Ctrl+Shift+Q`.
 - Cancel support: works while waiting and while typing.
+- UI language: switch between Chinese and English from the top-right selector.
 - Resizable window: the text area adjusts with the window size.
 
 ## Usage
