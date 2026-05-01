@@ -44,6 +44,67 @@ class InputEncodingTests(unittest.TestCase):
         self.assertEqual(events[2][0], win_input.VK_RETURN)
         self.assertEqual(events[4][1], ord("B"))
 
+    def test_type_text_supports_shift_enter_newlines(self) -> None:
+        events: list[tuple[int, int, int]] = []
+
+        with (
+            patch.object(win_input, "_send_keyboard_input", side_effect=lambda vk, scan, flags: events.append((vk, scan, flags))),
+            patch.object(win_input, "_sleep_interruptibly", return_value=None),
+        ):
+            typed = win_input.type_text(
+                "A\nB",
+                win_input.fixed_delay(0),
+                threading.Event(),
+                win_input.NEWLINE_SHIFT_ENTER,
+            )
+
+        self.assertEqual(typed, 3)
+        self.assertEqual(events[2], (win_input.VK_SHIFT, 0, 0))
+        self.assertEqual(events[3], (win_input.VK_RETURN, 0, 0))
+        self.assertEqual(events[4], (win_input.VK_RETURN, 0, win_input.KEYEVENTF_KEYUP))
+        self.assertEqual(events[5], (win_input.VK_SHIFT, 0, win_input.KEYEVENTF_KEYUP))
+
+    def test_type_text_supports_ctrl_enter_newlines(self) -> None:
+        events: list[tuple[int, int, int]] = []
+
+        with (
+            patch.object(win_input, "_send_keyboard_input", side_effect=lambda vk, scan, flags: events.append((vk, scan, flags))),
+            patch.object(win_input, "_sleep_interruptibly", return_value=None),
+        ):
+            win_input.type_text(
+                "A\nB",
+                win_input.fixed_delay(0),
+                threading.Event(),
+                win_input.NEWLINE_CTRL_ENTER,
+            )
+
+        self.assertEqual(events[2], (win_input.VK_CONTROL, 0, 0))
+        self.assertEqual(events[3], (win_input.VK_RETURN, 0, 0))
+        self.assertEqual(events[4], (win_input.VK_RETURN, 0, win_input.KEYEVENTF_KEYUP))
+        self.assertEqual(events[5], (win_input.VK_CONTROL, 0, win_input.KEYEVENTF_KEYUP))
+
+    def test_type_text_supports_unicode_newlines(self) -> None:
+        events: list[tuple[int, int, int]] = []
+
+        with (
+            patch.object(win_input, "_send_keyboard_input", side_effect=lambda vk, scan, flags: events.append((vk, scan, flags))),
+            patch.object(win_input, "_sleep_interruptibly", return_value=None),
+        ):
+            typed = win_input.type_text(
+                "A\r\nB",
+                win_input.fixed_delay(0),
+                threading.Event(),
+                win_input.NEWLINE_UNICODE,
+            )
+
+        self.assertEqual(typed, 3)
+        self.assertEqual(events[2], (0, ord("\n"), win_input.KEYEVENTF_UNICODE))
+        self.assertEqual(events[3], (0, ord("\n"), win_input.KEYEVENTF_UNICODE | win_input.KEYEVENTF_KEYUP))
+
+    def test_type_text_rejects_unknown_newline_mode(self) -> None:
+        with self.assertRaises(ValueError):
+            win_input.type_text("A", win_input.fixed_delay(0), threading.Event(), "bad-mode")
+
 
 if __name__ == "__main__":
     unittest.main()

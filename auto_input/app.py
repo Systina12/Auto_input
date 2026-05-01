@@ -8,7 +8,24 @@ from dataclasses import dataclass
 from tkinter import ttk
 
 from .hotkey import DEFAULT_HOTKEY, HotkeyError, HotkeyListener, HotkeySpec, parse_hotkey
-from .win_input import InputCancelled, fixed_delay, random_delay, type_text
+from .win_input import (
+    NEWLINE_CTRL_ENTER,
+    NEWLINE_ENTER,
+    NEWLINE_SHIFT_ENTER,
+    NEWLINE_UNICODE,
+    InputCancelled,
+    fixed_delay,
+    random_delay,
+    type_text,
+)
+
+
+NEWLINE_MODE_OPTIONS = {
+    "Enter": NEWLINE_ENTER,
+    "Shift+Enter": NEWLINE_SHIFT_ENTER,
+    "Ctrl+Enter": NEWLINE_CTRL_ENTER,
+    "Unicode 换行": NEWLINE_UNICODE,
+}
 
 
 @dataclass(frozen=True)
@@ -21,6 +38,7 @@ class RunSettings:
     max_char_delay: float
     minimize_on_start: bool
     emergency_hotkey: HotkeySpec
+    newline_mode: str
 
 
 class AutoInputApp(tk.Tk):
@@ -45,6 +63,7 @@ class AutoInputApp(tk.Tk):
         self._min_char_delay_var = tk.StringVar(value="20")
         self._max_char_delay_var = tk.StringVar(value="120")
         self._emergency_hotkey_var = tk.StringVar(value=DEFAULT_HOTKEY)
+        self._newline_mode_var = tk.StringVar(value="Enter")
 
         self._build_style()
         self._build_layout()
@@ -152,10 +171,11 @@ class AutoInputApp(tk.Tk):
         self.fixed_widgets = self._field(form, "固定字间延迟", self._fixed_char_delay_var, "毫秒", 3)
         self.min_widgets = self._field(form, "最小字间延迟", self._min_char_delay_var, "毫秒", 4)
         self.max_widgets = self._field(form, "最大字间延迟", self._max_char_delay_var, "毫秒", 5)
+        self.newline_widgets = self._combo_field(form, "换行方式", self._newline_mode_var, tuple(NEWLINE_MODE_OPTIONS), 6)
 
-        ttk.Separator(form).grid(row=6, column=0, columnspan=3, sticky="ew", pady=12)
-        ttk.Checkbutton(form, text="开始后最小化窗口", variable=self._minimize_var).grid(row=7, column=0, columnspan=3, sticky="w")
-        self.hotkey_widgets = self._field(form, "急停热键", self._emergency_hotkey_var, "全局", 8)
+        ttk.Separator(form).grid(row=7, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Checkbutton(form, text="开始后最小化窗口", variable=self._minimize_var).grid(row=8, column=0, columnspan=3, sticky="w")
+        self.hotkey_widgets = self._field(form, "急停热键", self._emergency_hotkey_var, "全局", 9)
 
         guide = ttk.Frame(settings_panel, padding=(0, 12, 0, 0), style="Panel.TFrame")
         guide.grid(row=2, column=0, sticky="ew")
@@ -196,6 +216,21 @@ class AutoInputApp(tk.Tk):
         unit_widget.grid(row=row, column=2, sticky="e", pady=4)
         return label_widget, entry, unit_widget
 
+    def _combo_field(
+        self,
+        parent: ttk.Frame,
+        label: str,
+        variable: tk.StringVar,
+        values: tuple[str, ...],
+        row: int,
+    ) -> tuple[ttk.Widget, ...]:
+        label_widget = ttk.Label(parent, text=label, style="PanelText.TLabel")
+        combo = ttk.Combobox(parent, textvariable=variable, values=values, state="readonly", width=12)
+
+        label_widget.grid(row=row, column=0, sticky="w", pady=4)
+        combo.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=4)
+        return label_widget, combo
+
     def _refresh_delay_fields(self) -> None:
         random_mode = self._mode_var.get()
         self._set_widgets_enabled(self.fixed_widgets, not random_mode)
@@ -206,6 +241,8 @@ class AutoInputApp(tk.Tk):
         for widget in widgets:
             if isinstance(widget, ttk.Entry):
                 widget.state(["!disabled"] if enabled else ["disabled"])
+            elif isinstance(widget, ttk.Combobox):
+                widget.state(["!disabled", "readonly"] if enabled else ["disabled"])
 
     def _on_text_modified(self, _event: tk.Event) -> None:
         self.text_box.edit_modified(False)
@@ -239,6 +276,7 @@ class AutoInputApp(tk.Tk):
         self.cancel_button.state(["!disabled"])
         self.emergency_button.state(["!disabled"])
         self._set_widgets_enabled(self.hotkey_widgets, False)
+        self._set_widgets_enabled(self.newline_widgets, False)
         self._set_status(f"将在 {settings.start_delay:g} 秒后开始输入，请切换到目标窗口。急停热键：{settings.emergency_hotkey.display}")
 
         if settings.minimize_on_start:
@@ -271,7 +309,7 @@ class AutoInputApp(tk.Tk):
                 else fixed_delay(settings.fixed_char_delay)
             )
             self._post_status("正在输入...")
-            typed = type_text(settings.text, delay_provider, self._cancel_event)
+            typed = type_text(settings.text, delay_provider, self._cancel_event, settings.newline_mode)
         except InputCancelled:
             self._post_done(self._cancel_reason)
         except Exception as exc:
@@ -304,6 +342,7 @@ class AutoInputApp(tk.Tk):
         self.cancel_button.state(["disabled"])
         self.emergency_button.state(["disabled"])
         self._set_widgets_enabled(self.hotkey_widgets, True)
+        self._set_widgets_enabled(self.newline_widgets, True)
         self._set_status(text)
         if self.state() == "iconic":
             self.deiconify()
@@ -321,6 +360,9 @@ class AutoInputApp(tk.Tk):
 
         if self._mode_var.get() and min_char_delay > max_char_delay:
             raise ValueError("随机字间延迟的最小值不能大于最大值。")
+        newline_mode = NEWLINE_MODE_OPTIONS.get(self._newline_mode_var.get())
+        if newline_mode is None:
+            raise ValueError("请选择有效的换行方式。")
         try:
             emergency_hotkey = parse_hotkey(self._emergency_hotkey_var.get())
         except HotkeyError as exc:
@@ -335,6 +377,7 @@ class AutoInputApp(tk.Tk):
             max_char_delay=max_char_delay,
             minimize_on_start=self._minimize_var.get(),
             emergency_hotkey=emergency_hotkey,
+            newline_mode=newline_mode,
         )
 
     def _get_text(self) -> str:

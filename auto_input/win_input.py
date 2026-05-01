@@ -14,7 +14,20 @@ DelayProvider = Callable[[], float]
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
+VK_SHIFT = 0x10
+VK_CONTROL = 0x11
 VK_RETURN = 0x0D
+
+NEWLINE_ENTER = "enter"
+NEWLINE_SHIFT_ENTER = "shift_enter"
+NEWLINE_CTRL_ENTER = "ctrl_enter"
+NEWLINE_UNICODE = "unicode"
+NEWLINE_MODES = (
+    NEWLINE_ENTER,
+    NEWLINE_SHIFT_ENTER,
+    NEWLINE_CTRL_ENTER,
+    NEWLINE_UNICODE,
+)
 
 
 ULONG_PTR = wintypes.WPARAM
@@ -89,7 +102,15 @@ def random_delay(min_seconds: float, max_seconds: float, rng: Random | None = No
     return lambda: rng.uniform(min_seconds, max_seconds)
 
 
-def type_text(text: str, delay_provider: DelayProvider, cancel_event: Event) -> int:
+def type_text(
+    text: str,
+    delay_provider: DelayProvider,
+    cancel_event: Event,
+    newline_mode: str = NEWLINE_ENTER,
+) -> int:
+    if newline_mode not in NEWLINE_MODES:
+        raise ValueError(f"Unsupported newline mode: {newline_mode}")
+
     typed = 0
     previous_was_cr = False
 
@@ -102,7 +123,7 @@ def type_text(text: str, delay_provider: DelayProvider, cancel_event: Event) -> 
             continue
 
         if char in ("\r", "\n"):
-            _press_enter()
+            _send_newline(newline_mode)
             previous_was_cr = char == "\r"
         else:
             previous_was_cr = False
@@ -120,9 +141,34 @@ def _send_unicode_char(char: str) -> None:
         _send_keyboard_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)
 
 
+def _send_newline(newline_mode: str) -> None:
+    if newline_mode == NEWLINE_ENTER:
+        _press_enter()
+    elif newline_mode == NEWLINE_SHIFT_ENTER:
+        _press_modified_enter(VK_SHIFT)
+    elif newline_mode == NEWLINE_CTRL_ENTER:
+        _press_modified_enter(VK_CONTROL)
+    elif newline_mode == NEWLINE_UNICODE:
+        _send_unicode_char("\n")
+    else:
+        raise ValueError(f"Unsupported newline mode: {newline_mode}")
+
+
 def _press_enter() -> None:
-    _send_keyboard_input(VK_RETURN, 0, 0)
-    _send_keyboard_input(VK_RETURN, 0, KEYEVENTF_KEYUP)
+    _press_key(VK_RETURN)
+
+
+def _press_key(vk: int) -> None:
+    _send_keyboard_input(vk, 0, 0)
+    _send_keyboard_input(vk, 0, KEYEVENTF_KEYUP)
+
+
+def _press_modified_enter(modifier_vk: int) -> None:
+    _send_keyboard_input(modifier_vk, 0, 0)
+    try:
+        _press_enter()
+    finally:
+        _send_keyboard_input(modifier_vk, 0, KEYEVENTF_KEYUP)
 
 
 def _send_keyboard_input(vk: int, scan: int, flags: int) -> None:
