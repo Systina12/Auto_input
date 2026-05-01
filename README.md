@@ -2,7 +2,13 @@
 
 [中文](README_zh.md)
 
-Auto Input is a lightweight Windows text input automation tool. Paste text, configure a start delay and per-character delay, then let the app type the text into the currently focused window.
+Auto Input is a lightweight Windows tool that simulates keyboard typing instead of paste.
+
+It is useful when:
+
+- Paste is disabled, such as in forms, exams, or some apps.
+- You need human-like typing with configurable delays.
+- You want to automate repetitive text input.
 
 The GUI uses Python's standard `tkinter` library. Text input is sent through the Windows `SendInput` API, so there are no third-party runtime dependencies.
 
