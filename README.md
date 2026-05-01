@@ -2,6 +2,10 @@
 
 [中文](README_zh.md)
 
+<p align="center">
+  <img src="assets/gui_en.png" width="700"/>
+</p>
+
 Auto Input is a lightweight Windows tool that simulates keyboard typing instead of paste.
 
 It is useful when:

@@ -2,6 +2,10 @@
 
 [English](README.md)
 
+<p align="center">
+  <img src="assets/gui_ch.png" width="700"/>
+</p>
+
 Auto Input 是一个面向 Windows 的轻量工具，它模拟键盘打字，而不是直接粘贴文本。
 
 适用于：
