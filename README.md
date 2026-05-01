@@ -63,3 +63,9 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 - If the target program runs as administrator, Auto Input must also run as administrator to send input to that window.
 - The default newline mode is `Enter`. For chat apps, try `Shift+Enter` or `Ctrl+Enter` to avoid sending the message accidentally.
 - The global emergency hotkey is registered only while a task is running and is released automatically when the task ends.
+
+## Acknowledgements
+
+Thanks to the [LinuxDo Community](https://linux.do/).
+
+Sincere, friendly, united, and professional: together we build a community we can all be proud of.

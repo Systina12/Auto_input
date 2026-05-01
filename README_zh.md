@@ -3,7 +3,7 @@
 [English](README.md)
 
 <p align="center">
-  <img src="assets/gui_ch.png" width="700"/>
+  <img src="assets/gui_zh.png" width="700"/>
 </p>
 
 Auto Input 是一个面向 Windows 的轻量工具，它模拟键盘打字，而不是直接粘贴文本。
@@ -63,3 +63,9 @@ dist\AutoInput.exe
 - 如果目标程序以管理员权限运行，本工具也需要以管理员权限运行，才能向目标窗口发送输入。
 - 默认换行方式是 `Enter`。如果目标是聊天软件，建议尝试 `Shift+Enter` 或 `Ctrl+Enter`，避免单独 `Enter` 直接发送消息。
 - 全局急停热键只在任务运行期间注册，任务结束后会自动释放。
+
+## 致谢
+
+感谢 [LinuxDo社区](https://linux.do/)。
+
+真诚、友善、团结、专业，共建你我引以为荣之社区。
