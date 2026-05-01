@@ -103,7 +103,7 @@ class AutoInputApp(tk.Tk):
         header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         header.columnconfigure(0, weight=1)
 
-        ttk.Label(header, text="延时自动输入", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text="自动输入", style="Header.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(header, text="粘贴文字，设置延时，开始后切到目标窗口即可。", style="Subtle.TLabel").grid(
             row=1, column=0, sticky="w", pady=(4, 0)
         )
