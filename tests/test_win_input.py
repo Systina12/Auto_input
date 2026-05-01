@@ -21,6 +21,11 @@ class DelayTests(unittest.TestCase):
 
 
 class InputEncodingTests(unittest.TestCase):
+    def test_input_structure_size_matches_windows_api_contract(self) -> None:
+        expected_size = 40 if win_input.ctypes.sizeof(win_input.ctypes.c_void_p) == 8 else 28
+
+        self.assertEqual(win_input.ctypes.sizeof(win_input.INPUT), expected_size)
+
     def test_utf16_units_supports_bmp_and_surrogate_pairs(self) -> None:
         self.assertEqual(win_input._utf16_units("中"), [0x4E2D])
         self.assertEqual(win_input._utf16_units("🙂"), [0xD83D, 0xDE42])
