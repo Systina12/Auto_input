@@ -43,6 +43,7 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 - Delayed start: gives you time to switch to the target window.
 - Per-character delay: supports fixed and randomized delays.
 - Randomized character delay: configurable minimum and maximum values.
+- Input modes: Unicode input for normal Windows controls, and compatible keyboard mode for PVE/noVNC/Linux console-style targets.
 - Newline modes: `Enter`, `Shift+Enter`, `Ctrl+Enter`, and Unicode newline.
 - Emergency stop: available through the in-window button and a global hotkey.
 - Configurable emergency hotkey: defaults to the backtick/tilde key, and can be changed to values like `Esc`, `F12`, or `Ctrl+Shift+Q`.
@@ -62,6 +63,7 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 
 - If the target program runs as administrator, Auto Input must also run as administrator to send input to that window.
 - The default newline mode is `Enter`. For chat apps, try `Shift+Enter` or `Ctrl+Enter` to avoid sending the message accidentally.
+- Compatible keyboard mode simulates US keyboard scan codes. It is intended for ASCII text and works best when the local system, PVE console, and Linux guest all use an `en-us` keyboard layout.
 - The global emergency hotkey is registered only while a task is running and is released automatically when the task ends.
 
 ## Acknowledgements

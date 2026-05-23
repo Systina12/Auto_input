@@ -11,6 +11,9 @@ from .hotkey import DEFAULT_HOTKEY, HotkeyError, HotkeyListener, HotkeySpec, par
 from .i18n import (
     DEFAULT_LANGUAGE,
     LANGUAGE_CHOICES,
+    input_mode_from_label,
+    input_mode_label,
+    input_mode_labels,
     language_code,
     language_display,
     newline_label,
@@ -18,7 +21,17 @@ from .i18n import (
     newline_mode_from_label,
     text,
 )
-from .win_input import NEWLINE_ENTER, InputCancelled, fixed_delay, random_delay, type_text
+from .win_input import (
+    INPUT_MODE_KEYBOARD,
+    INPUT_MODE_UNICODE,
+    NEWLINE_ENTER,
+    NEWLINE_UNICODE,
+    InputCancelled,
+    find_unsupported_keyboard_char,
+    fixed_delay,
+    random_delay,
+    type_text,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +45,7 @@ class RunSettings:
     minimize_on_start: bool
     emergency_hotkey: HotkeySpec
     newline_mode: str
+    input_mode: str
 
 
 class AutoInputApp(tk.Tk):
@@ -63,6 +77,7 @@ class AutoInputApp(tk.Tk):
         self._min_char_delay_var = tk.StringVar(value="20")
         self._max_char_delay_var = tk.StringVar(value="120")
         self._emergency_hotkey_var = tk.StringVar(value=DEFAULT_HOTKEY)
+        self._input_mode_var = tk.StringVar(value=input_mode_label(self._language_code, INPUT_MODE_UNICODE))
         self._newline_mode_var = tk.StringVar(value=newline_label(self._language_code, NEWLINE_ENTER))
 
         self._build_style()
@@ -184,13 +199,16 @@ class AutoInputApp(tk.Tk):
         self.fixed_widgets = self._field(form, "fixed_char_delay", self._fixed_char_delay_var, "milliseconds", 3)
         self.min_widgets = self._field(form, "min_char_delay", self._min_char_delay_var, "milliseconds", 4)
         self.max_widgets = self._field(form, "max_char_delay", self._max_char_delay_var, "milliseconds", 5)
-        self.newline_widgets = self._combo_field(form, "newline_mode", self._newline_mode_var, newline_labels(self._language_code), 6)
+        self.input_mode_widgets = self._combo_field(form, "input_mode", self._input_mode_var, input_mode_labels(self._language_code), 6)
+        self.input_mode_combo = self.input_mode_widgets[1]
+        self.newline_widgets = self._combo_field(form, "newline_mode", self._newline_mode_var, newline_labels(self._language_code), 7)
+        self.newline_combo = self.newline_widgets[1]
 
-        ttk.Separator(form).grid(row=7, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Separator(form).grid(row=8, column=0, columnspan=3, sticky="ew", pady=12)
         self._translated_checkbutton(form, "minimize_on_start", variable=self._minimize_var).grid(
-            row=8, column=0, columnspan=3, sticky="w"
+            row=9, column=0, columnspan=3, sticky="w"
         )
-        self.hotkey_widgets = self._field(form, "emergency_hotkey", self._emergency_hotkey_var, "global_hotkey", 9)
+        self.hotkey_widgets = self._field(form, "emergency_hotkey", self._emergency_hotkey_var, "global_hotkey", 10)
 
         guide = ttk.Frame(settings_panel, padding=(0, 12, 0, 0), style="Panel.TFrame")
         guide.grid(row=2, column=0, sticky="ew")
@@ -263,7 +281,6 @@ class AutoInputApp(tk.Tk):
     ) -> tuple[ttk.Widget, ...]:
         label_widget = self._translated_label(parent, label_key, style="PanelText.TLabel")
         combo = ttk.Combobox(parent, textvariable=variable, values=values, state="readonly", width=12)
-        self.newline_combo = combo
 
         label_widget.grid(row=row, column=0, sticky="w", pady=4)
         combo.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=4)
@@ -283,9 +300,11 @@ class AutoInputApp(tk.Tk):
                 widget.state(["!disabled", "readonly"] if enabled else ["disabled"])
 
     def _on_language_changed(self, _event: tk.Event) -> None:
+        selected_input_mode = self._selected_input_mode()
         selected_newline_mode = self._selected_newline_mode()
         self._language_code = language_code(self._language_var.get())
         self._language_var.set(language_display(self._language_code))
+        self._sync_input_mode_options(selected_input_mode)
         self._sync_newline_options(selected_newline_mode)
         self._apply_language()
 
@@ -299,6 +318,13 @@ class AutoInputApp(tk.Tk):
     def _sync_newline_options(self, selected_mode: str) -> None:
         self.newline_combo.configure(values=newline_labels(self._language_code))
         self._newline_mode_var.set(newline_label(self._language_code, selected_mode))
+
+    def _sync_input_mode_options(self, selected_mode: str) -> None:
+        self.input_mode_combo.configure(values=input_mode_labels(self._language_code))
+        self._input_mode_var.set(input_mode_label(self._language_code, selected_mode))
+
+    def _selected_input_mode(self) -> str:
+        return input_mode_from_label(self._language_code, self._input_mode_var.get()) or INPUT_MODE_UNICODE
 
     def _selected_newline_mode(self) -> str:
         return newline_mode_from_label(self._language_code, self._newline_mode_var.get()) or NEWLINE_ENTER
@@ -339,6 +365,7 @@ class AutoInputApp(tk.Tk):
         self.cancel_button.state(["!disabled"])
         self.emergency_button.state(["!disabled"])
         self._set_widgets_enabled(self.hotkey_widgets, False)
+        self._set_widgets_enabled(self.input_mode_widgets, False)
         self._set_widgets_enabled(self.newline_widgets, False)
         self._set_status_message("start_pending", delay=settings.start_delay, hotkey=settings.emergency_hotkey.display)
 
@@ -372,7 +399,7 @@ class AutoInputApp(tk.Tk):
                 else fixed_delay(settings.fixed_char_delay)
             )
             self._post_status_message("typing")
-            typed = type_text(settings.text, delay_provider, self._cancel_event, settings.newline_mode)
+            typed = type_text(settings.text, delay_provider, self._cancel_event, settings.newline_mode, settings.input_mode)
         except InputCancelled:
             key, kwargs = self._cancel_result
             self._post_done_message(key, **kwargs)
@@ -410,6 +437,7 @@ class AutoInputApp(tk.Tk):
         self.cancel_button.state(["disabled"])
         self.emergency_button.state(["disabled"])
         self._set_widgets_enabled(self.hotkey_widgets, True)
+        self._set_widgets_enabled(self.input_mode_widgets, True)
         self._set_widgets_enabled(self.newline_widgets, True)
         if self.state() == "iconic":
             self.deiconify()
@@ -427,9 +455,18 @@ class AutoInputApp(tk.Tk):
 
         if self._mode_var.get() and min_char_delay > max_char_delay:
             raise ValueError(self._t("error_random_range"))
+        input_mode = self._selected_input_mode()
+        if input_mode is None:
+            raise ValueError(self._t("error_invalid_input_mode"))
         newline_mode = self._selected_newline_mode()
         if newline_mode is None:
             raise ValueError(self._t("error_invalid_newline"))
+        if input_mode == INPUT_MODE_KEYBOARD and newline_mode == NEWLINE_UNICODE:
+            raise ValueError(self._t("error_keyboard_unicode_newline"))
+        if input_mode == INPUT_MODE_KEYBOARD:
+            unsupported_char = find_unsupported_keyboard_char(input_text)
+            if unsupported_char is not None:
+                raise ValueError(self._t("error_unsupported_keyboard_char", char=repr(unsupported_char)))
         try:
             emergency_hotkey = parse_hotkey(self._emergency_hotkey_var.get(), self._language_code)
         except HotkeyError as exc:
@@ -445,6 +482,7 @@ class AutoInputApp(tk.Tk):
             minimize_on_start=self._minimize_var.get(),
             emergency_hotkey=emergency_hotkey,
             newline_mode=newline_mode,
+            input_mode=input_mode,
         )
 
     def _get_text(self) -> str:

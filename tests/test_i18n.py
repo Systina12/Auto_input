@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from auto_input import i18n
-from auto_input.win_input import NEWLINE_ENTER, NEWLINE_UNICODE
+from auto_input.win_input import INPUT_MODE_KEYBOARD, INPUT_MODE_UNICODE, NEWLINE_ENTER, NEWLINE_UNICODE
 
 
 class I18nTests(unittest.TestCase):
@@ -16,6 +16,11 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(i18n.newline_label("zh", NEWLINE_UNICODE), "Unicode 换行")
         self.assertEqual(i18n.newline_label("en", NEWLINE_UNICODE), "Unicode newline")
         self.assertEqual(i18n.newline_mode_from_label("en", "Enter"), NEWLINE_ENTER)
+
+    def test_input_mode_labels_are_language_specific(self) -> None:
+        self.assertEqual(i18n.input_mode_label("zh", INPUT_MODE_KEYBOARD), "兼容键盘")
+        self.assertEqual(i18n.input_mode_label("en", INPUT_MODE_KEYBOARD), "Compatible keyboard")
+        self.assertEqual(i18n.input_mode_from_label("en", "Unicode input"), INPUT_MODE_UNICODE)
 
     def test_text_formats_current_language(self) -> None:
         self.assertEqual(i18n.text("en", "ready"), "Ready")

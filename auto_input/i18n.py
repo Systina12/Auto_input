@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from .win_input import NEWLINE_CTRL_ENTER, NEWLINE_ENTER, NEWLINE_SHIFT_ENTER, NEWLINE_UNICODE
+from .win_input import (
+    INPUT_MODE_KEYBOARD,
+    INPUT_MODE_UNICODE,
+    NEWLINE_CTRL_ENTER,
+    NEWLINE_ENTER,
+    NEWLINE_SHIFT_ENTER,
+    NEWLINE_UNICODE,
+)
 
 
 DEFAULT_LANGUAGE = "zh"
@@ -26,6 +33,17 @@ NEWLINE_LABELS = {
     },
 }
 
+INPUT_MODE_LABELS = {
+    "zh": {
+        INPUT_MODE_UNICODE: "Unicode 输入",
+        INPUT_MODE_KEYBOARD: "兼容键盘",
+    },
+    "en": {
+        INPUT_MODE_UNICODE: "Unicode input",
+        INPUT_MODE_KEYBOARD: "Compatible keyboard",
+    },
+}
+
 STRINGS = {
     "zh": {
         "header_title": "自动输入",
@@ -41,6 +59,7 @@ STRINGS = {
         "min_char_delay": "最小字间延迟",
         "max_char_delay": "最大字间延迟",
         "milliseconds": "毫秒",
+        "input_mode": "输入模式",
         "newline_mode": "换行方式",
         "minimize_on_start": "开始后最小化窗口",
         "emergency_hotkey": "急停热键",
@@ -67,7 +86,10 @@ STRINGS = {
         "error_numeric": "{name}必须是数字。",
         "error_non_negative": "{name}不能小于 0。",
         "error_random_range": "随机字间延迟的最小值不能大于最大值。",
+        "error_invalid_input_mode": "请选择有效的输入模式。",
         "error_invalid_newline": "请选择有效的换行方式。",
+        "error_keyboard_unicode_newline": "兼容键盘模式不支持 Unicode 换行，请选择 Enter、Shift+Enter 或 Ctrl+Enter。",
+        "error_unsupported_keyboard_char": "兼容键盘模式只支持 US ASCII 可键入字符，不支持：{char}",
     },
     "en": {
         "header_title": "Auto Input",
@@ -83,6 +105,7 @@ STRINGS = {
         "min_char_delay": "Minimum character delay",
         "max_char_delay": "Maximum character delay",
         "milliseconds": "ms",
+        "input_mode": "Input mode",
         "newline_mode": "Newline mode",
         "minimize_on_start": "Minimize after start",
         "emergency_hotkey": "Emergency hotkey",
@@ -109,7 +132,10 @@ STRINGS = {
         "error_numeric": "{name} must be a number.",
         "error_non_negative": "{name} cannot be less than 0.",
         "error_random_range": "The minimum random character delay cannot exceed the maximum.",
+        "error_invalid_input_mode": "Choose a valid input mode.",
         "error_invalid_newline": "Choose a valid newline mode.",
+        "error_keyboard_unicode_newline": "Compatible keyboard mode does not support Unicode newline. Choose Enter, Shift+Enter, or Ctrl+Enter.",
+        "error_unsupported_keyboard_char": "Compatible keyboard mode supports only US ASCII typeable characters. Unsupported: {char}",
     },
 }
 
@@ -139,6 +165,24 @@ def newline_labels(language: str) -> tuple[str, ...]:
 
 def newline_mode_from_label(language: str, label: str) -> str | None:
     labels = NEWLINE_LABELS.get(language, NEWLINE_LABELS[DEFAULT_LANGUAGE])
+    for mode, display in labels.items():
+        if display == label:
+            return mode
+    return None
+
+
+def input_mode_label(language: str, mode: str) -> str:
+    labels = INPUT_MODE_LABELS.get(language, INPUT_MODE_LABELS[DEFAULT_LANGUAGE])
+    return labels.get(mode, INPUT_MODE_LABELS[DEFAULT_LANGUAGE][INPUT_MODE_UNICODE])
+
+
+def input_mode_labels(language: str) -> tuple[str, ...]:
+    labels = INPUT_MODE_LABELS.get(language, INPUT_MODE_LABELS[DEFAULT_LANGUAGE])
+    return tuple(labels.values())
+
+
+def input_mode_from_label(language: str, label: str) -> str | None:
+    labels = INPUT_MODE_LABELS.get(language, INPUT_MODE_LABELS[DEFAULT_LANGUAGE])
     for mode, display in labels.items():
         if display == label:
             return mode
