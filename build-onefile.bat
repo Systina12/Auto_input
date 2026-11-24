@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 
 echo Building AutoInput single-file executable...
-uv run --with pyinstaller python -m PyInstaller ^
+uv run --locked --with pyinstaller==6.19.0 python -m PyInstaller ^
     --noconfirm ^
     --clean ^
     --onefile ^

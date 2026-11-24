@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import ctypes
-import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from random import Random
 from threading import Event
 from typing import Callable
+
+from .hotkey import MOD_CONTROL, MOD_SHIFT, HotkeySpec
 
 
 DelayProvider = Callable[[], float]
@@ -19,6 +20,7 @@ KEYEVENTF_SCANCODE = 0x0008
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_RETURN = 0x0D
+MAPVK_VK_TO_VSC_EX = 4
 
 INPUT_MODE_UNICODE = "unicode"
 INPUT_MODE_KEYBOARD = "keyboard"
@@ -91,8 +93,28 @@ if hasattr(ctypes, "WinDLL"):
     SendInput = _user32.SendInput
     SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int)
     SendInput.restype = wintypes.UINT
+
+    GetForegroundWindow = _user32.GetForegroundWindow
+    GetForegroundWindow.argtypes = ()
+    GetForegroundWindow.restype = wintypes.HWND
+
+    GetWindowThreadProcessId = _user32.GetWindowThreadProcessId
+    GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+    GetWindowThreadProcessId.restype = wintypes.DWORD
+
+    GetKeyboardLayout = _user32.GetKeyboardLayout
+    GetKeyboardLayout.argtypes = (wintypes.DWORD,)
+    GetKeyboardLayout.restype = wintypes.HKL
+
+    MapVirtualKeyEx = _user32.MapVirtualKeyExW
+    MapVirtualKeyEx.argtypes = (wintypes.UINT, wintypes.UINT, wintypes.HKL)
+    MapVirtualKeyEx.restype = wintypes.UINT
 else:
     SendInput = None
+    GetForegroundWindow = None
+    GetWindowThreadProcessId = None
+    GetKeyboardLayout = None
+    MapVirtualKeyEx = None
 
 
 class InputCancelled(Exception):
@@ -109,6 +131,13 @@ class UnsupportedKeyboardCharacter(ValueError):
 class KeyStroke:
     scan: int
     shift: bool = False
+
+
+@dataclass(frozen=True)
+class InputWindow:
+    handle: int
+    thread_id: int
+    process_id: int
 
 
 SCANCODE_SHIFT = 0x2A
@@ -210,12 +239,51 @@ def random_delay(min_seconds: float, max_seconds: float, rng: Random | None = No
     return lambda: rng.uniform(min_seconds, max_seconds)
 
 
+def input_window(handle: int) -> InputWindow | None:
+    if GetWindowThreadProcessId is None:
+        raise RuntimeError("Window detection is only available on Windows.")
+    process = wintypes.DWORD()
+    thread_id = GetWindowThreadProcessId(handle, ctypes.byref(process))
+    return InputWindow(handle, thread_id, process.value) if thread_id else None
+
+
+def foreground_window() -> InputWindow | None:
+    if GetForegroundWindow is None:
+        raise RuntimeError("Window detection is only available on Windows.")
+    handle = GetForegroundWindow()
+    return input_window(handle) if handle else None
+
+
+def hotkey_conflicts_with_input(
+    text: str, newline_mode: str, input_mode: str, hotkey: HotkeySpec, target: InputWindow
+) -> bool:
+    newline_modifiers = {NEWLINE_ENTER: 0, NEWLINE_SHIFT_ENTER: MOD_SHIFT, NEWLINE_CTRL_ENTER: MOD_CONTROL}
+    if hotkey.vk == VK_RETURN and hotkey.modifiers == newline_modifiers.get(newline_mode):
+        if "\r" in text or "\n" in text:
+            return True
+
+    if input_mode != INPUT_MODE_KEYBOARD or hotkey.modifiers not in (0, MOD_SHIFT):
+        return False
+
+    if GetKeyboardLayout is None or MapVirtualKeyEx is None:
+        raise RuntimeError("Keyboard layout detection is only available on Windows.")
+    layout = GetKeyboardLayout(target.thread_id)
+    scan = MapVirtualKeyEx(hotkey.vk, MAPVK_VK_TO_VSC_EX, layout)
+    if not scan:
+        return False
+
+    expected = KeyStroke(scan, shift=hotkey.modifiers == MOD_SHIFT)
+    return any(_keyboard_keystroke(char) == expected for char in set(text) - {"\r", "\n"})
+
+
 def type_text(
     text: str,
     delay_provider: DelayProvider,
     cancel_event: Event,
     newline_mode: str = NEWLINE_ENTER,
     input_mode: str = INPUT_MODE_UNICODE,
+    *,
+    before_character: Callable[[], object] | None = None,
 ) -> int:
     if newline_mode not in NEWLINE_MODES:
         raise ValueError(f"Unsupported newline mode: {newline_mode}")
@@ -233,6 +301,13 @@ def type_text(
             previous_was_cr = False
             continue
 
+        if typed:
+            _sleep_interruptibly(delay_provider(), cancel_event)
+        if before_character is not None:
+            before_character()
+        if cancel_event.is_set():
+            raise InputCancelled
+
         if char in ("\r", "\n"):
             _send_newline(newline_mode, input_mode)
             previous_was_cr = char == "\r"
@@ -241,7 +316,6 @@ def type_text(
             _send_char(char, input_mode)
 
         typed += 1
-        _sleep_interruptibly(delay_provider(), cancel_event)
 
     return typed
 

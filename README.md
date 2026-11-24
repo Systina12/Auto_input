@@ -18,6 +18,8 @@ The GUI uses Python's standard `tkinter` library. Text input is sent through the
 
 ## Run
 
+Download `AutoInput.exe` from [GitHub Releases](https://github.com/Systina12/Auto_input/releases/latest). To run from source, use uv and Python 3.11 or newer.
+
 ```powershell
 uv run python -m auto_input
 ```
@@ -38,6 +40,8 @@ dist\AutoInput.exe
 
 The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added as a runtime dependency.
 
+Run the tests on Windows with `uv run --locked python -m unittest discover -s tests -v`. The Windows workflow builds the executable and publishes it when a version tag is pushed or a commit titled `Release vX.Y` is pushed to `main`.
+
 ## Features
 
 - Delayed start: gives you time to switch to the target window.
@@ -46,7 +50,7 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 - Input modes: Unicode input for normal Windows controls, and compatible keyboard mode for PVE/noVNC/Linux console-style targets.
 - Newline modes: `Enter`, `Shift+Enter`, `Ctrl+Enter`, and Unicode newline.
 - Emergency stop: available through the in-window button and a global hotkey.
-- Configurable emergency hotkey: defaults to the backtick/tilde key, and can be changed to values like `Esc`, `F12`, or `Ctrl+Shift+Q`.
+- Configurable emergency hotkey: defaults to `F8` and can be changed to values like `Esc` or `Ctrl+Shift+Q`.
 - Cancel support: works while waiting and while typing.
 - UI language: switch between Chinese and English from the top-right selector.
 - Resizable window: the text area adjusts with the window size.
@@ -56,7 +60,7 @@ The script uses uv to invoke PyInstaller temporarily. PyInstaller is not added a
 1. Paste the text into the text box.
 2. Configure the start delay, character delay, and newline mode.
 3. Click Start.
-4. Switch to the target input field before the countdown ends.
+4. Switch to the target input field before the countdown ends. Typing pauses when the target window loses focus and resumes when you switch back.
 5. To stop, click Cancel, click Emergency Stop, or press the configured global emergency hotkey.
 
 ## Notes

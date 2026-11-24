@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from auto_input import win_input
+from auto_input.hotkey import parse_hotkey
 
 
 class DelayTests(unittest.TestCase):
@@ -178,6 +179,49 @@ class InputEncodingTests(unittest.TestCase):
     def test_type_text_rejects_unknown_input_mode(self) -> None:
         with self.assertRaises(ValueError):
             win_input.type_text("A", win_input.fixed_delay(0), threading.Event(), win_input.NEWLINE_ENTER, "bad-mode")
+
+
+    def test_guard_runs_after_delay_and_before_each_character(self) -> None:
+        calls: list[str] = []
+
+        def next_delay() -> float:
+            calls.append("delay")
+            return 0
+
+        with patch.object(win_input, "_send_char", side_effect=lambda char, _: calls.append(char)):
+            count = win_input.type_text(
+                "ab", next_delay, threading.Event(), before_character=lambda: calls.append("check")
+            )
+
+        self.assertEqual(count, 2)
+        self.assertEqual(calls, ["check", "a", "delay", "check", "b"])
+
+    def test_hotkey_conflicts_follow_keyboard_scan_code_and_modifiers(self) -> None:
+        target = win_input.InputWindow(10, 11, 12)
+        cases = (
+            ("x`", "`", True),
+            ("x~", "`", False),
+            ("x~", "Shift+`", True),
+            ("x`", "Ctrl+`", False),
+        )
+        with (
+            patch.object(win_input, "GetKeyboardLayout", return_value=0x409),
+            patch.object(win_input, "MapVirtualKeyEx", return_value=0x29),
+        ):
+            for text, hotkey, expected in cases:
+                with self.subTest(text=text, hotkey=hotkey):
+                    self.assertEqual(win_input.hotkey_conflicts_with_input(
+                        text, win_input.NEWLINE_ENTER, win_input.INPUT_MODE_KEYBOARD, parse_hotkey(hotkey), target,
+                    ), expected)
+
+    def test_hotkey_conflicts_with_modified_enter_in_unicode_mode(self) -> None:
+        target = win_input.InputWindow(10, 11, 12)
+        self.assertTrue(win_input.hotkey_conflicts_with_input(
+            "a\r\nb", win_input.NEWLINE_CTRL_ENTER, win_input.INPUT_MODE_UNICODE, parse_hotkey("Ctrl+Enter"), target,
+        ))
+        self.assertFalse(win_input.hotkey_conflicts_with_input(
+            "a\nb", win_input.NEWLINE_UNICODE, win_input.INPUT_MODE_UNICODE, parse_hotkey("Enter"), target,
+        ))
 
 
 if __name__ == "__main__":

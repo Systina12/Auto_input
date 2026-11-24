@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import math
+import os
 import platform
 import threading
 import time
 import tkinter as tk
 from dataclasses import dataclass
+from queue import Empty, SimpleQueue
 from tkinter import ttk
 
 from .hotkey import DEFAULT_HOTKEY, HotkeyError, HotkeyListener, HotkeySpec, parse_hotkey
@@ -27,8 +30,12 @@ from .win_input import (
     NEWLINE_ENTER,
     NEWLINE_UNICODE,
     InputCancelled,
+    InputWindow,
     find_unsupported_keyboard_char,
     fixed_delay,
+    foreground_window,
+    hotkey_conflicts_with_input,
+    input_window,
     random_delay,
     type_text,
 )
@@ -48,6 +55,36 @@ class RunSettings:
     input_mode: str
 
 
+@dataclass(frozen=True)
+class RunUpdate:
+    key: str
+    values: dict[str, object]
+    finished: bool
+
+
+class RunState:
+    def __init__(self) -> None:
+        self.cancel_event = threading.Event()
+        self.updates: SimpleQueue[RunUpdate] = SimpleQueue()
+        self.stop_source: str | None = None
+        self._lock = threading.Lock()
+
+    def cancel(self, source: str | None = None) -> bool:
+        with self._lock:
+            if self.cancel_event.is_set():
+                return False
+            self.stop_source = source
+            self.cancel_event.set()
+            return True
+
+    def post(self, key: str, *, finished: bool = False, **values: object) -> None:
+        self.updates.put(RunUpdate(key, values, finished))
+
+
+class TargetWindowClosed(Exception):
+    pass
+
+
 class AutoInputApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -62,11 +99,9 @@ class AutoInputApp(tk.Tk):
         self._status_kwargs: dict[str, object] = {}
         self._last_count = 0
 
-        self._cancel_event = threading.Event()
-        self._hotkey_listener = HotkeyListener(lambda: self._emergency_stop(self._t("source_hotkey")))
-        self._worker: threading.Thread | None = None
-        self._running = False
-        self._cancel_result: tuple[str, dict[str, object]] = ("cancelled", {})
+        self._run: RunState | None = None
+        self._hotkey_listener: HotkeyListener | None = None
+        self._poll_id: str | None = None
         self._status_var = tk.StringVar(value=self._t("ready"))
         self._count_var = tk.StringVar(value=self._t("count", count=0))
         self._mode_var = tk.BooleanVar(value=False)
@@ -343,7 +378,7 @@ class AutoInputApp(tk.Tk):
         self._update_count()
 
     def _start(self) -> None:
-        if self._running:
+        if self._run is not None:
             return
 
         try:
@@ -352,15 +387,16 @@ class AutoInputApp(tk.Tk):
             self._set_status_text(str(exc))
             return
 
+        run = RunState()
+        listener = HotkeyListener(lambda: run.cancel("source_hotkey"))
         try:
-            self._hotkey_listener.start(settings.emergency_hotkey, self._language_code)
+            listener.start(settings.emergency_hotkey, self._language_code)
         except HotkeyError as exc:
             self._set_status_text(str(exc))
             return
 
-        self._running = True
-        self._cancel_result = ("cancelled", {})
-        self._cancel_event.clear()
+        self._run = run
+        self._hotkey_listener = listener
         self.start_button.state(["disabled"])
         self.cancel_button.state(["!disabled"])
         self.emergency_button.state(["!disabled"])
@@ -370,69 +406,113 @@ class AutoInputApp(tk.Tk):
         self._set_status_message("start_pending", delay=settings.start_delay, hotkey=settings.emergency_hotkey.display)
 
         if settings.minimize_on_start:
-            self.after(250, self.iconify)
+            self.iconify()
 
-        self._worker = threading.Thread(target=self._run_worker, args=(settings,), daemon=True)
-        self._worker.start()
+        threading.Thread(target=self._run_worker, args=(settings, run), daemon=True).start()
+        self._poll_id = self.after(25, self._poll_run_updates)
 
     def _cancel(self) -> None:
-        if self._running:
-            self._cancel_result = ("cancelled", {})
-            self._cancel_event.set()
+        if self._run is not None and self._run.cancel():
             self._set_status_message("canceling")
 
     def _emergency_stop_from_button(self) -> None:
-        self._emergency_stop(self._t("source_button"))
+        if self._run is not None and self._run.cancel("source_button"):
+            self._set_status_message("emergency_triggered", source=self._t("source_button"))
 
-    def _emergency_stop(self, source: str) -> None:
-        if self._running:
-            self._cancel_result = ("emergency_done", {"source": source})
-            self._cancel_event.set()
-            self._post_status_message("emergency_triggered", source=source)
-
-    def _run_worker(self, settings: RunSettings) -> None:
+    def _run_worker(self, settings: RunSettings, run: RunState) -> None:
         try:
-            self._countdown(settings.start_delay)
+            self._countdown(settings.start_delay, run)
+            target = self._wait_for_target(run)
+            if hotkey_conflicts_with_input(
+                settings.text, settings.newline_mode, settings.input_mode, settings.emergency_hotkey, target
+            ):
+                run.post("hotkey_input_conflict", finished=True, hotkey=settings.emergency_hotkey.display)
+                return
+
             delay_provider = (
                 random_delay(settings.min_char_delay, settings.max_char_delay)
                 if settings.randomize
                 else fixed_delay(settings.fixed_char_delay)
             )
-            self._post_status_message("typing")
-            typed = type_text(settings.text, delay_provider, self._cancel_event, settings.newline_mode, settings.input_mode)
+            run.post("typing")
+            typed = type_text(
+                settings.text,
+                delay_provider,
+                run.cancel_event,
+                settings.newline_mode,
+                settings.input_mode,
+                before_character=lambda: self._wait_for_target(run, target),
+            )
         except InputCancelled:
-            key, kwargs = self._cancel_result
-            self._post_done_message(key, **kwargs)
+            run.post("cancelled", finished=True)
+        except TargetWindowClosed:
+            run.post("target_closed", finished=True)
         except Exception as exc:
-            self._post_done_message("input_failed", error=exc)
+            run.post("input_failed", finished=True, error=exc)
         else:
-            self._post_done_message("input_done", count=typed)
+            run.post("input_done", finished=True, count=typed)
 
-    def _countdown(self, seconds: float) -> None:
+    def _countdown(self, seconds: float, run: RunState) -> None:
         end_time = time.monotonic() + seconds
         while True:
-            if self._cancel_event.is_set():
+            if run.cancel_event.is_set():
                 raise InputCancelled
             remaining = end_time - time.monotonic()
             if remaining <= 0:
                 return
-            self._post_status_message("countdown", remaining=remaining)
-            if self._cancel_event.wait(min(0.1, remaining)):
+            run.post("countdown", remaining=remaining)
+            if run.cancel_event.wait(min(0.1, remaining)):
                 raise InputCancelled
 
-    def _post_status_message(self, key: str, **kwargs: object) -> None:
-        self.after(0, lambda: self._set_status_message(key, **kwargs))
+    def _wait_for_target(self, run: RunState, target: InputWindow | None = None) -> InputWindow:
+        waiting = False
+        while not run.cancel_event.is_set():
+            current = foreground_window()
+            if target is None:
+                if current is not None and current.process_id != os.getpid():
+                    return current
+            elif current == target:
+                if waiting:
+                    run.post("typing")
+                return target
+            elif input_window(target.handle) != target:
+                raise TargetWindowClosed
 
-    def _post_done_message(self, key: str, **kwargs: object) -> None:
-        self.after(0, lambda: self._finish_run_message(key, kwargs))
+            if not waiting:
+                run.post("waiting_for_target" if target is None else "target_paused")
+                waiting = True
+            run.cancel_event.wait(0.05)
+        raise InputCancelled
 
-    def _finish_run_message(self, key: str, kwargs: dict[str, object]) -> None:
-        self._finish_run()
-        self._set_status_message(key, **kwargs)
+    def _poll_run_updates(self) -> None:
+        self._poll_id = None
+        run = self._run
+        if run is None:
+            return
+
+        while True:
+            try:
+                update = run.updates.get_nowait()
+            except Empty:
+                break
+
+            if update.finished:
+                self._finish_run()
+                if update.key == "cancelled" and run.stop_source is not None:
+                    self._set_status_message("emergency_done", source=self._t(run.stop_source))
+                else:
+                    self._set_status_message(update.key, **update.values)
+                return
+            if not run.cancel_event.is_set():
+                self._set_status_message(update.key, **update.values)
+
+        self._poll_id = self.after(25, self._poll_run_updates)
 
     def _finish_run(self) -> None:
-        self._hotkey_listener.stop()
-        self._running = False
+        if self._hotkey_listener is not None:
+            self._hotkey_listener.stop()
+            self._hotkey_listener = None
+        self._run = None
         self.start_button.state(["!disabled"])
         self.cancel_button.state(["disabled"])
         self.emergency_button.state(["disabled"])
@@ -449,12 +529,15 @@ class AutoInputApp(tk.Tk):
             raise ValueError(self._t("error_no_text"))
 
         start_delay = self._read_non_negative_float(self._delay_var.get(), self._t("start_delay"))
-        fixed_char_delay = self._read_milliseconds(self._fixed_char_delay_var.get(), self._t("fixed_char_delay"))
-        min_char_delay = self._read_milliseconds(self._min_char_delay_var.get(), self._t("min_char_delay"))
-        max_char_delay = self._read_milliseconds(self._max_char_delay_var.get(), self._t("max_char_delay"))
-
-        if self._mode_var.get() and min_char_delay > max_char_delay:
-            raise ValueError(self._t("error_random_range"))
+        randomize = self._mode_var.get()
+        fixed_char_delay = min_char_delay = max_char_delay = 0.0
+        if randomize:
+            min_char_delay = self._read_milliseconds(self._min_char_delay_var.get(), self._t("min_char_delay"))
+            max_char_delay = self._read_milliseconds(self._max_char_delay_var.get(), self._t("max_char_delay"))
+            if min_char_delay > max_char_delay:
+                raise ValueError(self._t("error_random_range"))
+        else:
+            fixed_char_delay = self._read_milliseconds(self._fixed_char_delay_var.get(), self._t("fixed_char_delay"))
         input_mode = self._selected_input_mode()
         if input_mode is None:
             raise ValueError(self._t("error_invalid_input_mode"))
@@ -475,7 +558,7 @@ class AutoInputApp(tk.Tk):
         return RunSettings(
             text=input_text,
             start_delay=start_delay,
-            randomize=self._mode_var.get(),
+            randomize=randomize,
             fixed_char_delay=fixed_char_delay,
             min_char_delay=min_char_delay,
             max_char_delay=max_char_delay,
@@ -488,17 +571,21 @@ class AutoInputApp(tk.Tk):
     def _get_text(self) -> str:
         return self.text_box.get("1.0", "end-1c")
 
-    def _read_non_negative_float(self, raw: str, name: str) -> float:
+    def _read_non_negative_float(self, raw: str, name: str, *, maximum: float = threading.TIMEOUT_MAX) -> float:
         try:
             value = float(raw.strip())
         except ValueError:
             raise ValueError(self._t("error_numeric", name=name)) from None
+        if not math.isfinite(value):
+            raise ValueError(self._t("error_numeric", name=name))
         if value < 0:
             raise ValueError(self._t("error_non_negative", name=name))
+        if value > maximum:
+            raise ValueError(self._t("error_delay_too_large", name=name))
         return value
 
     def _read_milliseconds(self, raw: str, name: str) -> float:
-        return self._read_non_negative_float(raw, name) / 1000
+        return self._read_non_negative_float(raw, name, maximum=threading.TIMEOUT_MAX * 1000) / 1000
 
     def _set_status_message(self, key: str, **kwargs: object) -> None:
         self._status_key = key
@@ -514,8 +601,12 @@ class AutoInputApp(tk.Tk):
         return text(self._language_code, key, **kwargs)
 
     def _on_close(self) -> None:
-        self._cancel_event.set()
-        self._hotkey_listener.stop()
+        if self._run is not None:
+            self._run.cancel()
+        if self._poll_id is not None:
+            self.after_cancel(self._poll_id)
+        if self._hotkey_listener is not None:
+            self._hotkey_listener.stop()
         self.destroy()
 
 

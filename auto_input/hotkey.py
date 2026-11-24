@@ -17,7 +17,7 @@ WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
 PM_NOREMOVE = 0x0000
 
-DEFAULT_HOTKEY = "`"
+DEFAULT_HOTKEY = "F8"
 
 _ERROR_MESSAGES = {
     "zh": {
@@ -25,6 +25,7 @@ _ERROR_MESSAGES = {
         "multiple_keys": "急停热键只能包含一个普通按键。",
         "missing_key": "急停热键缺少普通按键。",
         "unsupported": "不支持的急停热键：{token}",
+        "reserved": "Windows 为调试器保留了 F12，请选择其他急停热键。",
         "windows_only": "全局急停热键只支持 Windows。",
         "timeout": "急停热键监听启动超时。",
         "register_failed": "注册急停热键失败，可能已被其他程序占用。",
@@ -34,6 +35,7 @@ _ERROR_MESSAGES = {
         "multiple_keys": "Emergency hotkey can contain only one non-modifier key.",
         "missing_key": "Emergency hotkey is missing a non-modifier key.",
         "unsupported": "Unsupported emergency hotkey: {token}",
+        "reserved": "Windows reserves F12 for the debugger. Choose a different emergency hotkey.",
         "windows_only": "The global emergency hotkey is only supported on Windows.",
         "timeout": "Emergency hotkey listener timed out while starting.",
         "register_failed": "Failed to register the emergency hotkey. It may already be used by another program.",
@@ -197,8 +199,10 @@ def _parse_key(token: str, language: str) -> tuple[int, str]:
     if alias is not None:
         return alias
 
-    if lowered.startswith("f") and lowered[1:].isdigit():
+    if lowered.startswith("f") and lowered[1:].isascii() and lowered[1:].isdigit():
         number = int(lowered[1:])
+        if number == 12:
+            raise HotkeyError(_message(language, "reserved"))
         if 1 <= number <= 24:
             return 0x70 + number - 1, f"F{number}"
 
@@ -220,6 +224,7 @@ class HotkeyListener:
         self._callback = callback
         self._thread: threading.Thread | None = None
         self._thread_id: int | None = None
+        self._stop_requested: threading.Event | None = None
         self._lock = threading.Lock()
         self._hotkey_id = 1
 
@@ -229,27 +234,30 @@ class HotkeyListener:
 
         self.stop()
         ready = threading.Event()
+        stop_requested = threading.Event()
         error: list[BaseException] = []
 
-        thread = threading.Thread(target=self._run, args=(spec, ready, error, language), daemon=True)
+        thread = threading.Thread(target=self._run, args=(spec, ready, stop_requested, error, language), daemon=True)
         with self._lock:
             self._thread = thread
             self._thread_id = None
+            self._stop_requested = stop_requested
         thread.start()
 
         if not ready.wait(2):
             self.stop()
             raise HotkeyError(_message(language, "timeout"))
         if error:
-            with self._lock:
-                self._thread = None
-                self._thread_id = None
+            self.stop()
             raise HotkeyError(str(error[0])) from error[0]
 
     def stop(self) -> None:
         with self._lock:
             thread = self._thread
             thread_id = self._thread_id
+            if self._stop_requested is not None:
+                self._stop_requested.set()
+                self._stop_requested = None
             self._thread = None
             self._thread_id = None
 
@@ -260,7 +268,10 @@ class HotkeyListener:
             PostThreadMessage(thread_id, WM_QUIT, 0, 0)
             thread.join(timeout=1)
 
-    def _run(self, spec: HotkeySpec, ready: threading.Event, error: list[BaseException], language: str) -> None:
+    def _run(
+        self, spec: HotkeySpec, ready: threading.Event, stop_requested: threading.Event,
+        error: list[BaseException], language: str,
+    ) -> None:
         assert RegisterHotKey is not None
         assert UnregisterHotKey is not None
         assert GetMessage is not None
@@ -268,11 +279,13 @@ class HotkeyListener:
         assert GetCurrentThreadId is not None
 
         thread_id = int(GetCurrentThreadId())
-        with self._lock:
-            self._thread_id = thread_id
-
         message = MSG()
         PeekMessage(ctypes.byref(message), None, 0, 0, PM_NOREMOVE)
+        with self._lock:
+            if stop_requested.is_set():
+                ready.set()
+                return
+            self._thread_id = thread_id
 
         if not RegisterHotKey(None, self._hotkey_id, spec.modifiers | MOD_NOREPEAT, spec.vk):
             error.append(_last_error(_message(language, "register_failed")))
@@ -281,7 +294,7 @@ class HotkeyListener:
 
         ready.set()
         try:
-            while GetMessage(ctypes.byref(message), None, 0, 0):
+            while not stop_requested.is_set() and GetMessage(ctypes.byref(message), None, 0, 0) > 0:
                 if message.message == WM_HOTKEY and message.wParam == self._hotkey_id:
                     self._callback()
         finally:

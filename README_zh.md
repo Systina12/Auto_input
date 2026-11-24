@@ -18,6 +18,8 @@ Auto Input 是一个面向 Windows 的轻量工具，它模拟键盘打字，而
 
 ## 运行
 
+可以从 [GitHub Releases](https://github.com/Systina12/Auto_input/releases/latest) 下载 `AutoInput.exe`。从源码运行需要 uv 和 Python 3.11 或更新版本。
+
 ```powershell
 uv run python -m auto_input
 ```
@@ -38,6 +40,8 @@ dist\AutoInput.exe
 
 脚本会通过 uv 临时调用 PyInstaller，不会把 PyInstaller 加入运行依赖。
 
+在 Windows 上可用 `uv run --locked python -m unittest discover -s tests -v` 运行测试。推送版本标签，或向 `main` 推送标题为 `Release vX.Y` 的提交，都会触发 EXE 构建和发布。
+
 ## 功能
 
 - 延时开始输入：开始后先倒计时，方便切换到目标窗口。
@@ -46,7 +50,7 @@ dist\AutoInput.exe
 - 输入模式：普通 Windows 控件可用 Unicode 输入，PVE/noVNC/Linux 控制台等场景可用兼容键盘模式。
 - 换行方式：支持 `Enter`、`Shift+Enter`、`Ctrl+Enter`、Unicode 换行。
 - 急停：支持窗口内“急停”按钮和全局急停热键。
-- 可配置急停热键：默认是反引号/波浪号键，也可设置为 `Esc`、`F12`、`Ctrl+Shift+Q` 等。
+- 可配置急停热键，默认是 `F8`，也可设置为 `Esc`、`Ctrl+Shift+Q` 等。
 - 可取消任务：等待倒计时和正在输入时都可以取消。
 - 界面语言：右上角可在中文和 English 之间切换。
 - 窗口可缩放：文本区域会随窗口大小调整。
@@ -56,7 +60,7 @@ dist\AutoInput.exe
 1. 在文本框中粘贴要输入的内容。
 2. 设置开始延时、字间延迟和换行方式。
 3. 按“开始”。
-4. 在倒计时结束前切换到目标输入框。
+4. 在倒计时结束前切换到目标输入框。目标窗口失去焦点时暂停输入，切回后继续。
 5. 如需中止，按“取消”、“急停”或配置好的全局急停热键。
 
 ## 注意事项
