@@ -1,0 +1,63 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run --locked python -m unittest discover -s tests -v
+      - name: Build AutoInput.exe
+        shell: cmd
+        run: call build-onefile.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoInput-windows-x64
+          path: dist/AutoInput.exe
+          if-no-files-found: error
+
+  release:
+    if: >-
+      github.event_name == 'push' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Release v')))
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AutoInput-windows-x64
+          path: dist
+      - name: Publish the Windows executable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            gh release create "$env:GITHUB_REF_NAME" dist/AutoInput.exe --verify-tag --generate-notes
+          } else {
+            $title = ($env:COMMIT_MESSAGE -split '\r?\n', 2)[0]
+            if ($title -notmatch '^Release (v\d+\.\d+(\.\d+)?)$') {
+              throw "Release commit must be titled 'Release vX.Y' or 'Release vX.Y.Z'."
+            }
+            gh release create "$($Matches[1])" dist/AutoInput.exe --target "$env:GITHUB_SHA" --generate-notes
+          }
+          exit $LASTEXITCODE
